@@ -20,12 +20,11 @@ class DenseLayer(nn.Module):
 class DenseNet(nn.Module):
     def __init__(self):
         super(DenseNet, self).__init__()
-        img_channels = 3
-        num_classes = 10
-        growth_rate = 32
+        img_channels = 1
+        num_classes = 22
+        growth_rate = 16
         num_init_features = 64
 
-        # Initial convolution
         self.init_conv = nn.Sequential(
             nn.Conv2d(img_channels, num_init_features, kernel_size=7, stride=2, padding=3, bias=False),
             nn.BatchNorm2d(num_init_features),
@@ -33,7 +32,6 @@ class DenseNet(nn.Module):
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
         )
 
-        # Dense blocks and transition layers
         num_features = num_init_features
         self.dense_block1, num_features = self._make_dense_block(num_features, growth_rate, 6)
         self.trans_layer1, num_features = self._make_transition_layer(num_features)
@@ -46,12 +44,10 @@ class DenseNet(nn.Module):
 
         self.dense_block4, num_features = self._make_dense_block(num_features, growth_rate, 16)
 
-        # Final batch norm
         self.final_bn = nn.BatchNorm2d(num_features)
-
-        # Global average pooling and classifier
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.classifier = nn.Linear(num_features, num_classes)
+        self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
+        # self.dropout = nn.Dropout(0.5)
+        self.classifier = nn.Linear(num_features * 7 * 7, num_classes)
 
     def _make_dense_block(self, in_channels, growth_rate, num_layers):
         layers = []
@@ -82,5 +78,6 @@ class DenseNet(nn.Module):
         x = self.final_bn(x)
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
+        # x = self.dropout(x)
         x = self.classifier(x)
         return x

@@ -1,10 +1,11 @@
-import  numpy as np
+import numpy as np
 import matplotlib.pyplot as plt
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms, datasets
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+import seaborn as sns
 
 from DenseNet import DenseNet
 
@@ -16,16 +17,19 @@ else:
 print('Using PyTorch version:', torch.__version__, ' Device:', DEVICE)
 
 BATCH_SIZE = 32
-EPOCHS = 10
+EPOCHS = 20
 
-train_dataset = datasets.CIFAR10(root='../data/CIFAR_10',
-                                train = True,
-                                download = True,
-                                transform = transforms.ToTensor())
+transformations = transforms.Compose([
+    transforms.Grayscale(num_output_channels=1),
+    transforms.Resize((224, 224)),
+    transforms.ToTensor()
+])
 
-test_dataset = datasets.CIFAR10(root='../data/CIFAR_10',
-                                train = False,
-                                transform = transforms.ToTensor())
+train_dataset = datasets.ImageFolder(root='../DenseNetTrainingSetNormal/Train',
+                                transform = transformations)
+
+test_dataset = datasets.ImageFolder(root='../DenseNetTrainingSetNormal/Test',
+                                transform = transformations)
 
 train_loader = torch.utils.data.DataLoader(dataset = train_dataset,
                                             batch_size = BATCH_SIZE,
@@ -41,10 +45,8 @@ for (X_train, y_train) in train_loader:
     break
 
 model = DenseNet().to(DEVICE)
-optimizer = torch.optim.Adam(model.parameters(), lr = 0.001)
+optimizer = torch.optim.Adam(model.parameters(), lr = 0.0001)
 criterion = nn.CrossEntropyLoss()
-
-#print(model)
 
 def train(model, train_loader, optimizer, log_interval):
     model.train()
@@ -67,6 +69,8 @@ def evaluate(model, test_loader):
     model.eval()
     test_loss = 0
     correct = 0
+    all_preds = []
+    all_labels = []
 
     with torch.no_grad():
         for image, label in test_loader:
@@ -74,16 +78,49 @@ def evaluate(model, test_loader):
             label = label.to(DEVICE)
             output = model(image)
             test_loss += criterion(output, label).item()
-            prediction = output.max(1, keepdim = True)[1]
+            prediction = output.max(1, keepdim=True)[1]
             correct += prediction.eq(label.view_as(prediction)).sum().item()
+            
+            all_preds.extend(prediction.cpu().numpy())
+            all_labels.extend(label.cpu().numpy())
     
     test_loss /= (len(test_loader.dataset) / BATCH_SIZE)
     test_accuracy = 100. * correct / len(test_loader.dataset)
-    return test_loss, test_accuracy
+    return test_loss, test_accuracy, all_labels, all_preds
 
+test_accuracies = []
+test_losses = []
+confusion_matrices = []
 
 for epoch in range(1, EPOCHS + 1):
     train(model, train_loader, optimizer, log_interval = 200)
-    test_loss, test_accuracy = evaluate(model, test_loader)
+    test_loss, test_accuracy, all_labels, all_preds = evaluate(model, test_loader)
+    test_accuracies.append(test_accuracy)
+    test_losses.append(test_loss)
+    cm = confusion_matrix(all_labels, all_preds)
+    confusion_matrices.append(cm)
     print("\n[EPOCH: {}], \tTest Loss: {:.4f}, \tTest Accuracy: {:.2f} % \n".format(
         epoch, test_loss, test_accuracy))
+
+plt.figure()
+plt.plot(range(1, EPOCHS + 1), test_accuracies, marker='o')
+plt.xlabel('Epochs')
+plt.ylabel('Test Accuracy (%)')
+plt.title('Test Accuracy over Epochs')
+plt.grid()
+plt.show()
+
+plt.figure()
+plt.plot(range(1, EPOCHS + 1), test_losses, marker='o')
+plt.xlabel('Epochs')
+plt.ylabel('Test Loss (%)')
+plt.title('Test Loss over Epochs')
+plt.grid()
+plt.show()
+
+plt.figure(figsize=(10, 8))
+sns.heatmap(confusion_matrices[-1], annot=True, fmt='d', cmap='Blues')
+plt.xlabel('Predicted')
+plt.ylabel('Actual')
+plt.title('Confusion Matrix for Last Epoch')
+plt.show()
